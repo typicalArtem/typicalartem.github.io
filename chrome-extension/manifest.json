@@ -1,0 +1,58 @@
+{
+  "manifest_version": 3,
+  "name": "Social Media Downloader",
+  "version": "1.0.0",
+  "description": "Download content from YouTube, Instagram, and TikTok",
+  "permissions": [
+    "activeTab",
+    "storage",
+    "downloads",
+    "notifications"
+  ],
+  "host_permissions": [
+    "https://www.youtube.com/*",
+    "https://youtube.com/*",
+    "https://www.instagram.com/*",
+    "https://instagram.com/*",
+    "https://www.tiktok.com/*",
+    "https://tiktok.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.youtube.com/*",
+        "https://youtube.com/*"
+      ],
+      "js": ["content-scripts/youtube.js"],
+      "css": ["styles/content.css"]
+    },
+    {
+      "matches": [
+        "https://www.instagram.com/*",
+        "https://instagram.com/*"
+      ],
+      "js": ["content-scripts/instagram.js"],
+      "css": ["styles/content.css"]
+    },
+    {
+      "matches": [
+        "https://www.tiktok.com/*",
+        "https://tiktok.com/*"
+      ],
+      "js": ["content-scripts/tiktok.js"],
+      "css": ["styles/content.css"]
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Social Media Downloader"
+  },
+  "icons": {
+    "16": "icons/icon-16.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  }
+}

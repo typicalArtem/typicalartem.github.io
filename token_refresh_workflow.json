@@ -1,0 +1,297 @@
+{
+  "name": "Facebook Token Refresh",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "cronExpression": "0 6 */30 * *"
+            }
+          ]
+        }
+      },
+      "id": "token-refresh-schedule",
+      "name": "Monthly Token Refresh",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [
+        200,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": "YOUR_GOOGLE_SHEET_ID",
+        "sheetName": "API_Tokens",
+        "range": "A:D",
+        "options": {}
+      },
+      "id": "read-tokens",
+      "name": "Read Current Tokens",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [
+        400,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Check token expiration and refresh if needed\nconst tokens = $input.all();\nconst refreshedTokens = [];\n\nfor (const item of tokens) {\n  const tokenData = item.json;\n  const expiresAt = new Date(tokenData.expires_at);\n  const now = new Date();\n  const daysUntilExpiry = Math.ceil((expiresAt - now) / (1000 * 60 * 60 * 24));\n  \n  // Refresh if expires in less than 7 days\n  if (daysUntilExpiry < 7) {\n    refreshedTokens.push({\n      app_id: tokenData.app_id,\n      app_secret: tokenData.app_secret,\n      current_token: tokenData.access_token,\n      token_type: tokenData.token_type,\n      needs_refresh: true\n    });\n  } else {\n    console.log(`Token ${tokenData.token_type} expires in ${daysUntilExpiry} days - no refresh needed`);\n  }\n}\n\nreturn refreshedTokens.map(token => ({ json: token }));"
+      },
+      "id": "check-expiration",
+      "name": "Check Token Expiration",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        600,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://graph.facebook.com/v18.0/oauth/access_token?grant_type=fb_exchange_token&client_id={{ $json.app_id }}&client_secret={{ $json.app_secret }}&fb_exchange_token={{ $json.current_token }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 10000
+        }
+      },
+      "id": "refresh-token",
+      "name": "Refresh Access Token",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        800,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process token refresh response\nconst response = $input.first().json;\nconst originalData = $input.first().json;\n\nif (response.statusCode === 200 && response.body.access_token) {\n  const newToken = response.body.access_token;\n  const expiresIn = response.body.expires_in || 5184000; // Default 60 days\n  const expiresAt = new Date(Date.now() + (expiresIn * 1000));\n  \n  return [{\n    json: {\n      token_type: originalData.token_type,\n      access_token: newToken,\n      expires_at: expiresAt.toISOString(),\n      refreshed_at: new Date().toISOString(),\n      success: true\n    }\n  }];\n} else {\n  console.error('Token refresh failed:', response.body);\n  return [{\n    json: {\n      token_type: originalData.token_type,\n      error: response.body?.error?.message || 'Unknown error',\n      success: false\n    }\n  }];\n}"
+      },
+      "id": "process-refresh",
+      "name": "Process Refresh Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1000,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "sheet",
+        "operation": "update",
+        "documentId": "YOUR_GOOGLE_SHEET_ID",
+        "sheetName": "API_Tokens",
+        "columnToMatchOn": "token_type",
+        "valueToMatchOn": "={{ $json.token_type }}",
+        "fieldsUi": {
+          "values": [
+            {
+              "column": "access_token",
+              "value": "={{ $json.access_token }}"
+            },
+            {
+              "column": "expires_at",
+              "value": "={{ $json.expires_at }}"
+            },
+            {
+              "column": "refreshed_at",
+              "value": "={{ $json.refreshed_at }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "update-tokens",
+      "name": "Update Token Storage",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [
+        1200,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepare token refresh notification\nconst results = $input.all();\nconst successful = results.filter(item => item.json.success);\nconst failed = results.filter(item => !item.json.success);\n\nif (results.length === 0) {\n  return [{ json: { skip: true } }];\n}\n\nlet emailContent = `\n<h2>🔄 Отчет об обновлении токенов Facebook API</h2>\n<p>Результаты автоматического обновления токенов:</p>\n`;\n\nif (successful.length > 0) {\n  emailContent += `\n  <div style=\"background: #d4edda; padding: 15px; margin: 10px 0; border-radius: 5px; border-left: 4px solid #28a745;\">\n    <h3>✅ Успешно обновлено: ${successful.length}</h3>\n    <ul>`;\n  \n  for (const item of successful) {\n    emailContent += `<li><strong>${item.json.token_type}</strong> - обновлен ${new Date(item.json.refreshed_at).toLocaleString('ru-RU')}</li>`;\n  }\n  \n  emailContent += `</ul></div>`;\n}\n\nif (failed.length > 0) {\n  emailContent += `\n  <div style=\"background: #f8d7da; padding: 15px; margin: 10px 0; border-radius: 5px; border-left: 4px solid #dc3545;\">\n    <h3>❌ Ошибки обновления: ${failed.length}</h3>\n    <ul>`;\n  \n  for (const item of failed) {\n    emailContent += `<li><strong>${item.json.token_type}</strong> - ${item.json.error}</li>`;\n  }\n  \n  emailContent += `</ul></div>`;\n}\n\nemailContent += `\n<hr>\n<p><small>Автоматическое уведомление от системы управления токенами</small></p>\n`;\n\nreturn [{\n  json: {\n    subject: `🔄 Обновление токенов: ${successful.length} успешно, ${failed.length} ошибок`,\n    html: emailContent,\n    skip: results.length === 0\n  }\n}];"
+      },
+      "id": "format-notification",
+      "name": "Format Notification",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1400,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "skip-email-condition",
+              "leftValue": "={{ $json.skip }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "notEqual"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-send-notification",
+      "name": "Check Send Notification",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1600,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "noreply@yourcompany.com",
+        "toEmail": "admin@yourcompany.com",
+        "subject": "={{ $json.subject }}",
+        "emailType": "html",
+        "message": "={{ $json.html }}",
+        "options": {}
+      },
+      "id": "send-notification",
+      "name": "Send Notification",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [
+        1800,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Monthly Token Refresh": {
+      "main": [
+        [
+          {
+            "node": "Read Current Tokens",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Current Tokens": {
+      "main": [
+        [
+          {
+            "node": "Check Token Expiration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Token Expiration": {
+      "main": [
+        [
+          {
+            "node": "Refresh Access Token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Refresh Access Token": {
+      "main": [
+        [
+          {
+            "node": "Process Refresh Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Refresh Response": {
+      "main": [
+        [
+          {
+            "node": "Update Token Storage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Token Storage": {
+      "main": [
+        [
+          {
+            "node": "Format Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Notification": {
+      "main": [
+        [
+          {
+            "node": "Check Send Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Send Notification": {
+      "main": [
+        [
+          {
+            "node": "Send Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "createdAt": "2024-12-31T10:00:00.000Z",
+      "updatedAt": "2024-12-31T10:00:00.000Z",
+      "id": "token-management",
+      "name": "Token Management"
+    }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2024-12-31T10:00:00.000Z",
+  "versionId": "1"
+}

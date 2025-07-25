@@ -1,0 +1,466 @@
+{
+  "name": "Competitor Social Media Monitor",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "cronExpression": "0 10 * * *"
+            }
+          ]
+        }
+      },
+      "id": "84a8d0d3-d8f0-4be8-b2d8-6c3a4b8a7e9f",
+      "name": "Daily Schedule",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [
+        200,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": "YOUR_GOOGLE_SHEET_ID",
+        "sheetName": "Competitors",
+        "range": "A:D",
+        "options": {}
+      },
+      "id": "9e5f2b4c-3a7d-4e8f-9b1c-2d6e8a5b9c4f",
+      "name": "Read Competitors List",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [
+        400,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "7c2e8f4b-5d9a-4f1e-8b3c-1a5d7e9b2f4c",
+      "name": "Split Into Batches",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        600,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "a1b2c3d4-e5f6-7890-1234-567890abcdef",
+              "leftValue": "={{ $json.platform }}",
+              "rightValue": "instagram",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "5f8e2a7b-9d1c-4e6f-8a2b-3c7e9f1d5a8b",
+      "name": "Check Platform Type",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        800,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://www.instagram.com/{{ $json.username }}/",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 10000
+        }
+      },
+      "id": "2b7e4f1a-8c5d-4e9f-7a3b-1d6e8c2f5a9b",
+      "name": "Fetch Instagram Profile",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1000,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract Instagram posts data from HTML\nconst html = $input.all()[0].json.body;\nconst username = $input.all()[0].json.username;\nconst lastCheckDate = $input.all()[0].json.last_check || new Date(Date.now() - 24*60*60*1000).toISOString();\n\n// Regex to find JSON data in Instagram page\nconst scriptRegex = /<script type=\"application\\/ld\\+json\"[^>]*>([\\s\\S]*?)<\\/script>/gi;\nconst matches = [...html.matchAll(scriptRegex)];\n\nlet posts = [];\nlet newPosts = [];\n\nfor (const match of matches) {\n  try {\n    const jsonData = JSON.parse(match[1]);\n    if (jsonData['@type'] === 'SocialMediaPosting') {\n      const postDate = new Date(jsonData.datePublished);\n      const checkDate = new Date(lastCheckDate);\n      \n      if (postDate > checkDate) {\n        newPosts.push({\n          username: username,\n          platform: 'instagram',\n          content: jsonData.headline || jsonData.text || 'No content available',\n          url: jsonData.url,\n          date: jsonData.datePublished,\n          image: jsonData.image ? jsonData.image.url : null\n        });\n      }\n    }\n  } catch (e) {\n    console.log('Error parsing JSON:', e);\n  }\n}\n\n// Alternative method: parse from window._sharedData\nconst sharedDataRegex = /window\\._sharedData = ({.*?});/;\nconst sharedDataMatch = html.match(sharedDataRegex);\n\nif (sharedDataMatch && newPosts.length === 0) {\n  try {\n    const sharedData = JSON.parse(sharedDataMatch[1]);\n    const userPosts = sharedData?.entry_data?.ProfilePage?.[0]?.graphql?.user?.edge_owner_to_timeline_media?.edges || [];\n    \n    for (const edge of userPosts.slice(0, 5)) { // Check last 5 posts\n      const post = edge.node;\n      const postDate = new Date(post.taken_at_timestamp * 1000);\n      const checkDate = new Date(lastCheckDate);\n      \n      if (postDate > checkDate) {\n        newPosts.push({\n          username: username,\n          platform: 'instagram',\n          content: post.edge_media_to_caption?.edges?.[0]?.node?.text || 'No caption',\n          url: `https://www.instagram.com/p/${post.shortcode}/`,\n          date: postDate.toISOString(),\n          image: post.display_url\n        });\n      }\n    }\n  } catch (e) {\n    console.log('Error parsing shared data:', e);\n  }\n}\n\nreturn newPosts.map(post => ({ json: post }));"
+      },
+      "id": "3e9f1c5a-7b2d-4f8e-9c1a-5e8f2b6d9c3a",
+      "name": "Parse Instagram Posts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://www.facebook.com/{{ $json.username }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 10000
+        }
+      },
+      "id": "6f2a8e1b-9c4d-4e7f-8a2b-3d6e9c1f5a8b",
+      "name": "Fetch Facebook Profile",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1000,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract Facebook posts data from HTML\nconst html = $input.all()[0].json.body;\nconst username = $input.all()[0].json.username;\nconst lastCheckDate = $input.all()[0].json.last_check || new Date(Date.now() - 24*60*60*1000).toISOString();\n\nlet newPosts = [];\n\n// Try to find structured data\nconst scriptRegex = /<script type=\"application\\/ld\\+json\"[^>]*>([\\s\\S]*?)<\\/script>/gi;\nconst matches = [...html.matchAll(scriptRegex)];\n\nfor (const match of matches) {\n  try {\n    const jsonData = JSON.parse(match[1]);\n    if (jsonData['@type'] === 'SocialMediaPosting' || jsonData['@type'] === 'Article') {\n      const postDate = new Date(jsonData.datePublished || jsonData.dateModified);\n      const checkDate = new Date(lastCheckDate);\n      \n      if (postDate > checkDate) {\n        newPosts.push({\n          username: username,\n          platform: 'facebook',\n          content: jsonData.headline || jsonData.text || jsonData.description || 'No content available',\n          url: jsonData.url || `https://www.facebook.com/${username}`,\n          date: jsonData.datePublished || jsonData.dateModified,\n          image: jsonData.image ? (typeof jsonData.image === 'string' ? jsonData.image : jsonData.image.url) : null\n        });\n      }\n    }\n  } catch (e) {\n    console.log('Error parsing JSON:', e);\n  }\n}\n\n// Alternative: Look for Open Graph meta tags for recent posts\nif (newPosts.length === 0) {\n  const titleMatch = html.match(/<meta property=\"og:title\" content=\"([^\"]*)\"/i);\n  const descMatch = html.match(/<meta property=\"og:description\" content=\"([^\"]*)\"/i);\n  const urlMatch = html.match(/<meta property=\"og:url\" content=\"([^\"]*)\"/i);\n  const imageMatch = html.match(/<meta property=\"og:image\" content=\"([^\"]*)\"/i);\n  \n  if (titleMatch || descMatch) {\n    // This is a basic fallback - in real scenario you'd need more sophisticated parsing\n    newPosts.push({\n      username: username,\n      platform: 'facebook',\n      content: descMatch ? descMatch[1] : (titleMatch ? titleMatch[1] : 'New post detected'),\n      url: urlMatch ? urlMatch[1] : `https://www.facebook.com/${username}`,\n      date: new Date().toISOString(),\n      image: imageMatch ? imageMatch[1] : null\n    });\n  }\n}\n\nreturn newPosts.map(post => ({ json: post }));"
+      },
+      "id": "4d7e2f9a-8c1b-4e5f-9a3d-6e2f8c5b9a1d",
+      "name": "Parse Facebook Posts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineAll",
+        "options": {}
+      },
+      "id": "8e1f4c2a-9b5d-4e7f-8c2a-3f6e9b1d5c8a",
+      "name": "Merge Posts",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2.1,
+      "position": [
+        1400,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "b2c3d4e5-f6g7-8901-2345-678901bcdefg",
+              "leftValue": "={{ $json.content }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "isNotEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "9f2e5a8b-1c4d-4e7f-9a3b-2d5e8f1c4a9b",
+      "name": "Filter New Posts",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1600,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Format email content for new posts\nconst posts = $input.all();\n\nif (posts.length === 0) {\n  return [{ json: { skip: true } }];\n}\n\nlet emailContent = `\n<h2>🔔 Новые публикации конкурентов</h2>\n<p>Обнаружены новые публикации за последние 24 часа:</p>\n`;\n\nfor (const item of posts) {\n  const post = item.json;\n  emailContent += `\n  <div style=\"border: 1px solid #ddd; padding: 15px; margin: 10px 0; border-radius: 5px;\">\n    <h3>📱 ${post.platform.toUpperCase()}: @${post.username}</h3>\n    <p><strong>Дата:</strong> ${new Date(post.date).toLocaleString('ru-RU')}</p>\n    <p><strong>Содержание:</strong></p>\n    <blockquote style=\"background: #f5f5f5; padding: 10px; border-left: 3px solid #007cba;\">\n      ${post.content.substring(0, 500)}${post.content.length > 500 ? '...' : ''}\n    </blockquote>\n    <p><a href=\"${post.url}\" target=\"_blank\" style=\"color: #007cba;\">🔗 Посмотреть публикацию</a></p>\n    ${post.image ? `<p><img src=\"${post.image}\" style=\"max-width: 300px; height: auto;\" alt=\"Post image\"></p>` : ''}\n  </div>\n  `;\n}\n\nemailContent += `\n<hr>\n<p><small>Автоматическое уведомление от системы мониторинга конкурентов</small></p>\n`;\n\nreturn [{\n  json: {\n    subject: `🔔 Обнаружено ${posts.length} новых публикаций конкурентов`,\n    html: emailContent,\n    text: posts.map(item => `${item.json.platform.toUpperCase()}: @${item.json.username} - ${item.json.content.substring(0, 200)}...`).join('\\n\\n')\n  }\n}];"
+      },
+      "id": "1a8e3f5b-9c2d-4e6f-8a1b-4d7e9c2f6a8b",
+      "name": "Format Email Content",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1800,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "c3d4e5f6-g7h8-9012-3456-789012cdefgh",
+              "leftValue": "={{ $json.skip }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "notEqual"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "2b9f4e7a-1c5d-4e8f-9b2a-5e8f1c4a7b9f",
+      "name": "Check If Send Email",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2000,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "noreply@yourcompany.com",
+        "toEmail": "your-email@yourcompany.com",
+        "subject": "={{ $json.subject }}",
+        "emailType": "html",
+        "message": "={{ $json.html }}",
+        "options": {}
+      },
+      "id": "3c1f5e8a-2d6e-4f9a-1c4b-6e9f2c5a8b1f",
+      "name": "Send Email Notification",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [
+        2200,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "sheet",
+        "operation": "update",
+        "documentId": "YOUR_GOOGLE_SHEET_ID",
+        "sheetName": "Competitors",
+        "columnToMatchOn": "username",
+        "valueToMatchOn": "={{ $json.username }}",
+        "fieldsUi": {
+          "values": [
+            {
+              "column": "last_check",
+              "value": "={{ new Date().toISOString() }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "4d2f6e9a-3e7f-5f1a-2c5b-7f1e3c6a9d2f",
+      "name": "Update Check Timestamp",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [
+        2400,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Daily Schedule": {
+      "main": [
+        [
+          {
+            "node": "Read Competitors List",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Competitors List": {
+      "main": [
+        [
+          {
+            "node": "Split Into Batches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Into Batches": {
+      "main": [
+        [
+          {
+            "node": "Check Platform Type",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Platform Type": {
+      "main": [
+        [
+          {
+            "node": "Fetch Instagram Profile",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fetch Facebook Profile",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Instagram Profile": {
+      "main": [
+        [
+          {
+            "node": "Parse Instagram Posts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Instagram Posts": {
+      "main": [
+        [
+          {
+            "node": "Merge Posts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Facebook Profile": {
+      "main": [
+        [
+          {
+            "node": "Parse Facebook Posts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Facebook Posts": {
+      "main": [
+        [
+          {
+            "node": "Merge Posts",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge Posts": {
+      "main": [
+        [
+          {
+            "node": "Filter New Posts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter New Posts": {
+      "main": [
+        [
+          {
+            "node": "Format Email Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Email Content": {
+      "main": [
+        [
+          {
+            "node": "Check If Send Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check If Send Email": {
+      "main": [
+        [
+          {
+            "node": "Send Email Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Email Notification": {
+      "main": [
+        [
+          {
+            "node": "Update Check Timestamp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "createdAt": "2024-12-31T10:00:00.000Z",
+      "updatedAt": "2024-12-31T10:00:00.000Z",
+      "id": "social-monitoring",
+      "name": "Social Media Monitoring"
+    }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2024-12-31T10:00:00.000Z",
+  "versionId": "1"
+}

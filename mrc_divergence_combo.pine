@@ -1,0 +1,749 @@
+// Combined script: Mean Reversion Channel (MRI Variant) + Divergence for Many Indicators v4
+// Licenses: MPL-2.0
+// Credits:
+//   Mean Reversion Channel - MRI Variant — © fareidzulkifli
+//   Divergence for Many Indicators v4 — © LonesomeTheBlue
+// You may reuse/modify under MPL-2.0 with proper attribution.
+//
+// Notes:
+// - Pine v5, overlay=true.
+// - Both modules can be toggled independently.
+// - Inputs are preserved (prefixed to avoid conflicts).
+// - Alerts from divergence kept.
+
+//@version=5
+indicator("MRC + Divergence Combo (v5)", shorttitle="MRC+Dv v5", overlay=true, max_bars_back=1000, max_lines_count=500, max_labels_count=500)
+
+//===============================
+// Global toggles
+//===============================
+sep_general = input.bool(false, "═════════ General ════════")
+enable_mrc  = input.bool(true,  title="Enable Mean Reversion Channel (MRC)")
+enable_div  = input.bool(true,  title="Enable Divergences")
+
+//===============================
+// MRC PARAMETERS (renamed + namespaced)
+//===============================
+mrc_indiSet     = input.bool(false,              "═════════ MRC Parameters ════════")
+mrc_source      = input.source(hlc3,               title="MRC Price Source")
+mrc_type        = input.string("SuperSmoother",    title="MRC Filter Type", options=["SuperSmoother", "Ehlers EMA", "Gaussian", "Butterworth", "BandStop", "SMA", "EMA", "RMA"])
+mrc_length      = input.int(200,                title="MRC Lookback Period",minval=1)
+mrc_innermult   = input.float(1.0,                title="MRC Inner Channel Size Multiplier", minval = 0.1)
+mrc_outermult   = input.float(2.415,              title="MRC Outer Channel Size Multiplier", minval = 0.1)
+
+mrc_ChartSet    = input.bool(false,              "═════════ MRC Chart Setting ════════")
+mrc_drawchannel = input.bool(true,               title="MRC Draw Channel")
+mrc_displayzone = input.bool(true,               title="MRC Draw Zone (With Channel)")
+mrc_zonetransp  = input.int(60,                 title="MRC Zone Transparency", minval=0, maxval=100)
+mrc_displayline = input.bool(true,               title="MRC Display Line Extension")
+
+mrc_MTFSet      = input.bool(false,              "═════════ MRC MTF Setting ════════")
+mrc_enable_mtf  = input.bool(true,               title="Enable MRC Multiple TimeFrame Analysis")
+mrc_mtf_disp_typ= input.string("On Hover",         title="MRC MTF Display Type", options=["Always Display", "On Hover"])
+mrc_mtf_typ     = input.string("Auto",             title="MRC Multiple TimeFrame Type", options=["Auto", "Custom"])
+mrc_mtf_lvl1    = input.timeframe("D",                title="MRC Custom MTF Level 1")
+mrc_mtf_lvl2    = input.timeframe("W",                title="MRC Custom MTF Level 2")
+
+//===============================
+// Divergence PARAMETERS (namespaced)
+//===============================
+sep_div = input.bool(false, "═════════ Divergences Parameters ════════")
+div_prd         = input.int(defval = 5, title = "DIV Pivot Period", minval = 1, maxval = 50)
+div_source_mode = input.string(defval = "Close", title = "DIV Source for Pivot Points", options = ["Close", "High/Low"]) 
+// divergence type
+div_searchdiv   = input.string(defval = "Regular", title = "DIV Divergence Type", options = ["Regular", "Hidden", "Regular/Hidden"])
+// appearance
+div_showindis   = input.string(defval = "Full", title = "DIV Show Indicator Names", options = ["Full", "First Letter", "Don't Show"]) 
+// filters
+div_showlimit   = input.int(1, title="DIV Minimum Number of Divergence", minval = 1, maxval = 11)
+div_maxpp       = input.int(defval = 10, title = "DIV Maximum Pivot Points to Check", minval = 1, maxval = 20)
+div_maxbars     = input.int(defval = 100, title = "DIV Maximum Bars to Check", minval = 30, maxval = 200)
+// drawing
+div_shownum     = input.bool(defval = true, title = "DIV Show Divergence Number")
+div_showlast    = input.bool(defval = false, title = "DIV Show Only Last Divergence")
+div_dontconfirm = input.bool(defval = false, title = "DIV Don't Wait for Confirmation")
+div_showlines   = input.bool(defval = true, title = "DIV Show Divergence Lines")
+div_showpivot   = input.bool(defval = false, title = "DIV Show Pivot Points")
+// which indicators
+div_calcmacd    = input.bool(defval = true, title = "MACD")
+div_calcmacda   = input.bool(defval = true, title = "MACD Histogram")
+div_calcrsi     = input.bool(defval = true, title = "RSI")
+div_calcstoc    = input.bool(defval = true, title = "Stochastic")
+div_calccci     = input.bool(defval = true, title = "CCI")
+div_calcmom     = input.bool(defval = true, title = "Momentum")
+div_calcobv     = input.bool(defval = true, title = "OBV")
+div_calcvwmacd  = input.bool(true, title = "VWmacd")
+div_calccmf     = input.bool(true, title = "Chaikin Money Flow")
+div_calcmfi     = input.bool(true, title = "Money Flow Index")
+div_calcext     = input.bool(false, title = "Check External Indicator")
+div_externalindi= input.source(defval = close, title = "External Indicator")
+// colors
+pos_reg_div_col = input.color(defval = color.yellow, title = "Positive Regular Divergence")
+neg_reg_div_col = input.color(defval = color.navy, title = "Negative Regular Divergence")
+pos_hid_div_col = input.color(defval = color.lime, title = "Positive Hidden Divergence")
+neg_hid_div_col = input.color(defval = color.red, title = "Negative Hidden Divergence")
+pos_div_text_col= input.color(defval = color.black, title = "Positive Divergence Text Color")
+neg_div_text_col= input.color(defval = color.white, title = "Negative Divergence Text Color")
+reg_div_l_style_= input.string(defval = "Solid", title = "Regular Divergence Line Style", options = ["Solid", "Dashed", "Dotted"]) 
+hid_div_l_style_= input.string(defval = "Dashed", title = "Hidden Divergence Line Style", options = ["Solid", "Dashed", "Dotted"]) 
+reg_div_l_width = input.int(defval = 2, title = "Regular Divergence Line Width", minval = 1, maxval = 5)
+hid_div_l_width = input.int(defval = 1, title = "Hidden Divergence Line Width", minval = 1, maxval = 5)
+// MAs
+showmas   = input.bool(defval = false, title = "DIV Show MAs 50 & 200", inline = "div_ma12")
+div_cma1col = input.color(defval = color.lime, title = "", inline = "div_ma12")
+div_cma2col = input.color(defval = color.red, title = "", inline = "div_ma12")
+
+//===============================
+// ---------- MRC IMPLEMENTATION ----------
+//===============================
+var float pi_          = math.pi
+var float mult         = pi_ * mrc_innermult
+var float mult2        = pi_ * mrc_outermult
+var float gradsize     = 0.5
+var int   gradtransp   = mrc_zonetransp
+
+// True Range (manual to avoid ta.tr quirks)
+tr_() => math.max(high - low, math.max(math.abs(high - nz(close[1])), math.abs(low - nz(close[1]))))
+
+// Ehlers SwissArmyKnife Function
+SAK_smoothing(_type, _src, _length) =>
+    c0 = 1.0 
+    c1 = 0.0 
+    b0 = 1.0 
+    b1 = 0.0 
+    b2 = 0.0 
+    a1 = 0.0 
+    a2 = 0.0 
+    alpha = 0.0 
+    beta  = 0.0 
+    gamma = 0.0 
+    cycle = 2 * pi_ / _length
+    if _type == "Ehlers EMA"
+        alpha := (math.cos(cycle) + math.sin(cycle) - 1) / math.cos(cycle)
+        b0    := alpha
+        a1    := 1 - alpha
+    if _type == "Gaussian"
+        beta  := 2.415 * (1 - math.cos(cycle))
+        alpha := -beta + math.sqrt((beta * beta) + (2 * beta))
+        c0    := alpha * alpha
+        a1    := 2 * (1 - alpha)
+        a2    := -(1 - alpha) * (1 - alpha)
+    if _type == "Butterworth"
+        beta  := 2.415 * (1 - math.cos(cycle))
+        alpha := -beta + math.sqrt((beta * beta) + (2 * beta))
+        c0    := alpha * alpha / 4
+        b1    := 2
+        b2    := 1
+        a1    := 2 * (1 - alpha)
+        a2    := -(1 - alpha) * (1 - alpha)
+    if _type == "BandStop"
+        beta  := math.cos(cycle)
+        gamma := 1 / math.cos(cycle*2*0.1)
+        alpha := gamma - math.sqrt((gamma * gamma) - 1)
+        c0    := (1 + alpha) / 2
+        b1    := -2 * beta
+        b2    := 1
+        a1    := beta * (1 + alpha)
+        a2    := -alpha
+    if _type == "SMA"
+        c1    := 1 / _length
+        b0    := 1 / _length
+        a1    := 1
+    if _type == "EMA"
+        alpha := 2/(_length+1)
+        b0    := alpha
+        a1    := 1 - alpha
+    if _type == "RMA"
+        alpha := 1 / _length
+        b0    := alpha
+        a1    := 1 - alpha
+    _Input   = _src
+    _Output  = 0.0
+    _Output := (c0 * ((b0 * _Input) + (b1 * nz(_Input[1])) + (b2 * nz(_Input[2])))) + (a1 * nz(_Output[1])) + (a2 * nz(_Output[2])) - (c1 * nz(_Input[_length])) 
+
+// SuperSmoother Function
+supersmoother(_src, _length) =>
+    s_a1 = math.exp(-math.sqrt(2) * pi_ / _length)
+    s_b1 = 2 * s_a1 * math.cos(math.sqrt(2) * pi_ / _length)
+    s_c3 = -math.pow(s_a1, 2)
+    s_c2 = s_b1
+    s_c1 = 1 - s_c2 - s_c3
+    ss   = 0.0
+    ss  := s_c1 * _src + s_c2 * nz(ss[1], _src[1]) + s_c3 * nz(ss[2], _src[2])
+
+// ————— Converts current chart resolution into a float minutes value.
+f_resInMinutes() => 
+    timeframe.multiplier * (
+      timeframe.isseconds ? 1. / 60             :
+      timeframe.isminutes ? 1.                  :
+      timeframe.isdaily   ? 60. * 24            :
+      timeframe.isweekly  ? 60. * 24 * 7        :
+      timeframe.ismonthly ? 60. * 24 * 30.4375  : na)
+
+get_tf(_lvl)=>
+    y = f_resInMinutes()
+    z = timeframe.period
+    if(mrc_mtf_typ=="Auto")
+        if y < 1
+            z := _lvl == 1 ? "1"   : _lvl == 2 ? "5"  : z
+        else if y <= 3
+            z := _lvl == 1 ? "5"   : _lvl == 2 ? "15" : z
+        else if y <= 10
+            z := _lvl == 1 ? "15"  : _lvl == 2 ? "60" : z
+        else if y <= 30
+            z := _lvl == 1 ? "60"  : _lvl == 2 ? "240" : z
+        else if y <= 120
+            z := _lvl == 1 ? "240" : _lvl == 2 ? "D"  : z
+        else if y <= 240
+            z := _lvl == 1 ? "D"   : _lvl == 2 ? "W"  : z
+        else if y <= 1440
+            z := _lvl == 1 ? "W"   : _lvl == 2 ? "M"  : z
+        else if y <= 10080
+            z := _lvl == 1 ? "M"   : z
+        else
+            z := z
+    else
+        z := _lvl == 1 ? mrc_mtf_lvl1   : _lvl == 2 ? mrc_mtf_lvl2 : z
+    z
+
+// Mean Reversion Channel core
+get_mrc()=>
+    v_condition   = 0
+    v_meanline    = mrc_source
+    v_meanrange   = supersmoother(tr_(), mrc_length)
+    if(mrc_type == "SuperSmoother")
+        v_meanline := supersmoother(mrc_source, mrc_length)
+    if(mrc_type != "SuperSmoother")
+        v_meanline := SAK_smoothing(mrc_type, mrc_source, mrc_length)
+    v_upband1 = v_meanline+(v_meanrange*mult)
+    v_loband1 = v_meanline-(v_meanrange*mult)
+    v_upband2 = v_meanline+(v_meanrange*mult2)
+    v_loband2 = v_meanline-(v_meanrange*mult2)
+    if(close > v_meanline)
+        v_upband2_1 = v_upband2  + (v_meanrange * gradsize * 4)
+        v_upband2_9 = v_upband2  + (v_meanrange * gradsize * -4)
+        if(high >= v_upband2_9 and high < v_upband2)
+            v_condition := 1
+        else if(high >= v_upband2 and high < v_upband2_1)
+            v_condition := 2
+        else if(high >= v_upband2_1)
+            v_condition := 3
+        else if(close <= v_meanline+v_meanrange)
+            v_condition := 4
+        else
+            v_condition := 5
+    if(close < v_meanline)
+        v_loband2_1 = v_loband2  - (v_meanrange * gradsize * 4)
+        v_loband2_9 = v_loband2  - (v_meanrange * gradsize * -4)
+        if(low <= v_loband2_9 and low > v_loband2)
+            v_condition := -1
+        else if(low <= v_loband2 and low > v_loband2_1)
+            v_condition := -2
+        else if(low <= v_loband2_1)
+            v_condition := -3
+        else if(close >= v_meanline+v_meanrange)
+            v_condition := -4
+        else
+            v_condition := -5
+    [v_meanline, v_meanrange, v_upband1, v_loband1, v_upband2, v_loband2, v_condition]
+
+get_stat(_cond) =>
+    _ret = _cond == 1  ? "Overbought (Weak)\n" :
+            _cond == 2  ? "Overbought\n" :
+            _cond == 3  ? "Overbought (Strong)\n" :
+            _cond == 4  ? "Price Near Mean\n" :
+            _cond == 5  ? "Price Above Mean\n" :
+            _cond == -1 ? "Oversold (Weak)\n" :
+            _cond == -2 ? "Oversold\n" :
+            _cond == -3 ? "Oversold (Strong)\n" :
+            _cond == -4 ? "Price Near Mean\n" :
+            _cond == -5 ? "Price Below Mean\n" : "Price at Mean Line\n"
+    _ret
+
+f_PriceLine(_ref, linecol) =>
+    line.new(
+      x1     = bar_index, x2     = bar_index - 1,
+      y1     = _ref,      y2     = _ref,
+      extend = extend.left,
+      color  = linecol)
+
+f_MTFLabel(_txt, _yloc) =>
+    label.new(
+      x         = time + math.round(ta.change(time)*20),
+      y         = _yloc, 
+      xloc      = xloc.bar_time, 
+      text      = mrc_mtf_disp_typ == "Always Display" ? _txt : "Check MTF",
+      tooltip   = mrc_mtf_disp_typ == "Always Display" ? ""   : _txt,
+      color     = color.black, 
+      textcolor = color.white,
+      size      = size.normal, 
+      style     = label.style_label_left,
+      textalign = text.align_left)
+
+// CALC CHANNEL & MTF
+var string mrc_tf_0 = timeframe.period
+var string mrc_tf_1 = get_tf(1)
+var string mrc_tf_2 = get_tf(2)
+
+[meanline, meanrange, upband1, loband1, upband2, loband2, condition]                                    = get_mrc()
+[mtf1_meanline, mtf1_meanrange, mtf1_upband1, mtf1_loband1, mtf1_upband2, mtf1_loband2, mtf1_condition] = request.security(syminfo.tickerid, mrc_tf_1, get_mrc())
+[mtf2_meanline, mtf2_meanrange, mtf2_upband1, mtf2_loband1, mtf2_upband2, mtf2_loband2, mtf2_condition] = request.security(syminfo.tickerid, mrc_tf_2, get_mrc())
+
+// DRAWING (gated by enable_mrc)
+float p_meanline  = enable_mrc and mrc_drawchannel ? meanline   : na
+float p_upband1   = enable_mrc and mrc_drawchannel ? upband1    : na
+float p_loband1   = enable_mrc and mrc_drawchannel ? loband1    : na
+float p_upband2   = enable_mrc and mrc_drawchannel ? upband2    : na
+float p_loband2   = enable_mrc and mrc_drawchannel ? loband2    : na
+
+plot(p_meanline, color=#FFCD00,     style=plot.style_line,    title="MRC Mean", linewidth=2)
+plot(p_upband1,  color=color.green, style=plot.style_circles, title="MRC R1", linewidth=1)
+plot(p_loband1,  color=color.green, style=plot.style_circles, title="MRC S1", linewidth=1)
+plot(p_upband2,  color=color.red,   style=plot.style_line,    title="MRC R2", linewidth=1)
+plot(p_loband2,  color=color.red,   style=plot.style_line,    title="MRC S2", linewidth=1)
+
+// Gradient zones
+var color color1 = #FF0000
+var color color2 = #FF4200
+var color color3 = #FF5D00
+var color color4 = #FF7400
+var color color5 = #FF9700
+var color color6 = #FFAE00
+var color color7 = #FFC500
+var color color8 = #FFCD00
+
+float upband2_1 = enable_mrc and mrc_drawchannel and mrc_displayzone ? upband2 + (meanrange * gradsize * 4)  : na
+float loband2_1 = enable_mrc and mrc_drawchannel and mrc_displayzone ? loband2 - (meanrange * gradsize * 4)  : na
+float upband2_2 = enable_mrc and mrc_drawchannel and mrc_displayzone ? upband2 + (meanrange * gradsize * 3)  : na
+float loband2_2 = enable_mrc and mrc_drawchannel and mrc_displayzone ? loband2 - (meanrange * gradsize * 3)  : na
+float upband2_3 = enable_mrc and mrc_drawchannel and mrc_displayzone ? upband2 + (meanrange * gradsize * 2)  : na
+float loband2_3 = enable_mrc and mrc_drawchannel and mrc_displayzone ? loband2 - (meanrange * gradsize * 2)  : na
+float upband2_4 = enable_mrc and mrc_drawchannel and mrc_displayzone ? upband2 + (meanrange * gradsize * 1)  : na
+float loband2_4 = enable_mrc and mrc_drawchannel and mrc_displayzone ? loband2 - (meanrange * gradsize * 1)  : na
+float upband2_5 = enable_mrc and mrc_drawchannel and mrc_displayzone ? upband2 + (meanrange * gradsize * 0)  : na
+float loband2_5 = enable_mrc and mrc_drawchannel and mrc_displayzone ? loband2 - (meanrange * gradsize * 0)  : na
+float upband2_6 = enable_mrc and mrc_drawchannel and mrc_displayzone ? upband2 + (meanrange * gradsize * -1) : na
+float loband2_6 = enable_mrc and mrc_drawchannel and mrc_displayzone ? loband2 - (meanrange * gradsize * -1) : na
+float upband2_7 = enable_mrc and mrc_drawchannel and mrc_displayzone ? upband2 + (meanrange * gradsize * -2) : na
+float loband2_7 = enable_mrc and mrc_drawchannel and mrc_displayzone ? loband2 - (meanrange * gradsize * -2) : na
+float upband2_8 = enable_mrc and mrc_drawchannel and mrc_displayzone ? upband2 + (meanrange * gradsize * -3) : na
+float loband2_8 = enable_mrc and mrc_drawchannel and mrc_displayzone ? loband2 - (meanrange * gradsize * -3) : na
+float upband2_9 = enable_mrc and mrc_drawchannel and mrc_displayzone ? upband2 + (meanrange * gradsize * -4) : na
+float loband2_9 = enable_mrc and mrc_drawchannel and mrc_displayzone ? loband2 - (meanrange * gradsize * -4) : na
+
+plot_upband2_1 = plot(upband2_1, color=na, display=display.none)
+plot_loband2_1 = plot(loband2_1, color=na, display=display.none)
+plot_upband2_2 = plot(upband2_2, color=na, display=display.none)
+plot_loband2_2 = plot(loband2_2, color=na, display=display.none)
+plot_upband2_3 = plot(upband2_3, color=na, display=display.none)
+plot_loband2_3 = plot(loband2_3, color=na, display=display.none)
+plot_upband2_4 = plot(upband2_4, color=na, display=display.none)
+plot_loband2_4 = plot(loband2_4, color=na, display=display.none)
+plot_upband2_5 = plot(upband2_5, color=na, display=display.none)
+plot_loband2_5 = plot(loband2_5, color=na, display=display.none)
+plot_upband2_6 = plot(upband2_6, color=na, display=display.none)
+plot_loband2_6 = plot(loband2_6, color=na, display=display.none)
+plot_upband2_7 = plot(upband2_7, color=na, display=display.none)
+plot_loband2_7 = plot(loband2_7, color=na, display=display.none)
+plot_upband2_8 = plot(upband2_8, color=na, display=display.none)
+plot_loband2_8 = plot(loband2_8, color=na, display=display.none)
+plot_upband2_9 = plot(upband2_9, color=na, display=display.none)
+plot_loband2_9 = plot(loband2_9, color=na, display=display.none)
+
+fill(plot_upband2_1,plot_upband2_2, color=color.new(color1, gradtransp))
+fill(plot_loband2_1,plot_loband2_2, color=color.new(color1, gradtransp))
+fill(plot_upband2_2,plot_upband2_3, color=color.new(color2, gradtransp))
+fill(plot_loband2_2,plot_loband2_3, color=color.new(color2, gradtransp))
+fill(plot_upband2_3,plot_upband2_4, color=color.new(color3, gradtransp))
+fill(plot_loband2_3,plot_loband2_4, color=color.new(color3, gradtransp))
+fill(plot_upband2_4,plot_upband2_5, color=color.new(color4, gradtransp))
+fill(plot_loband2_4,plot_loband2_5, color=color.new(color4, gradtransp))
+fill(plot_upband2_5,plot_upband2_6, color=color.new(color5, gradtransp))
+fill(plot_loband2_5,plot_loband2_6, color=color.new(color5, gradtransp))
+fill(plot_upband2_6,plot_upband2_7, color=color.new(color6, gradtransp))
+fill(plot_loband2_6,plot_loband2_7, color=color.new(color6, gradtransp))
+fill(plot_upband2_7,plot_upband2_8, color=color.new(color7, gradtransp))
+fill(plot_loband2_7,plot_loband2_8, color=color.new(color7, gradtransp))
+fill(plot_upband2_8,plot_upband2_9, color=color.new(color8, gradtransp))
+fill(plot_loband2_8,plot_loband2_9, color=color.new(color8, gradtransp))
+
+// Plot extension lines (safer v5 pattern)
+var line mrc_mean  = na
+var line mrc_res1  = na
+var line mrc_sup1  = na
+var line mrc_res2  = na
+var line mrc_sup2  = na
+if enable_mrc and mrc_displayline
+    if not na(mrc_mean)
+        line.delete(mrc_mean)
+    if not na(mrc_res1)
+        line.delete(mrc_res1)
+    if not na(mrc_sup1)
+        line.delete(mrc_sup1)
+    if not na(mrc_res2)
+        line.delete(mrc_res2)
+    if not na(mrc_sup2)
+        line.delete(mrc_sup2)
+    mrc_mean := f_PriceLine(meanline, #FFCD00)
+    mrc_res1 := f_PriceLine(upband1,  color.green)
+    mrc_sup1 := f_PriceLine(loband1,  color.green)
+    mrc_res2 := f_PriceLine(upband2,  color.red)
+    mrc_sup2 := f_PriceLine(loband2,  color.red)
+
+var string brl = "\n--------------------------------------"
+dist_0 = "Distance from Mean: "+ str.tostring(((close-meanline)/close)*100, "#.##") + " %"
+dist_1 = "Distance from Mean: "+ str.tostring(((close-mtf1_meanline)/close)*100, "#.##") + " %"
+dist_2 = "Distance from Mean: "+ str.tostring(((close-mtf2_meanline)/close)*100, "#.##") + " %"
+
+var string mrc_title = "Mean Reversion Channel\nMultiple TimeFrame Analysis" + brl
+mrc_tf0_str = "\n\nTimeframe: "+ mrc_tf_0 + " (Current)\nStatus: " + get_stat(condition) + dist_0 + brl
+mrc_tf1_str = not timeframe.ismonthly ? "\n\nTimeframe: "+ mrc_tf_1 + "\nStatus: " + get_stat(mtf1_condition) + dist_1 + brl : ""
+mrc_tf2_str = not timeframe.isweekly and not timeframe.ismonthly ? "\n\nTimeframe: "+ mrc_tf_2 + "\nStatus: " + get_stat(mtf2_condition) + dist_2 + brl : ""
+
+mrc_mtf_lbl_txt = mrc_title + mrc_tf0_str + mrc_tf1_str + mrc_tf2_str
+var label mrc_label_mtf = na
+if enable_mrc and mrc_enable_mtf
+    if not na(mrc_label_mtf)
+        label.delete(mrc_label_mtf)
+    mrc_label_mtf := f_MTFLabel(mrc_mtf_lbl_txt, meanline)
+
+//===============================
+// ---------- DIVERGENCES IMPLEMENTATION ----------
+//===============================
+var reg_div_l_style = reg_div_l_style_ == "Solid" ? line.style_solid : reg_div_l_style_ == "Dashed" ? line.style_dashed : line.style_dotted
+var hid_div_l_style = hid_div_l_style_ == "Solid" ? line.style_solid : hid_div_l_style_ == "Dashed" ? line.style_dashed : line.style_dotted
+
+// MAs (optional)
+plot(enable_div and showmas ? ta.sma(close, 50) : na, color = enable_div and showmas ? div_cma1col : na, title="DIV SMA50")
+plot(enable_div and showmas ? ta.sma(close, 200) : na, color = enable_div and showmas ? div_cma2col: na, title="DIV SMA200")
+
+// indicators for divergences
+var indicators_name = array.new<string>(11)
+var div_colors = array.new<color>(4)
+if barstate.isfirst
+    array.set(indicators_name, 0, div_showindis == "Full" ? "MACD" : "M")
+    array.set(indicators_name, 1, div_showindis == "Full" ? "Hist" : "H")
+    array.set(indicators_name, 2, div_showindis == "Full" ? "RSI" : "E")
+    array.set(indicators_name, 3, div_showindis == "Full" ? "Stoch" : "S")
+    array.set(indicators_name, 4, div_showindis == "Full" ? "CCI" : "C")
+    array.set(indicators_name, 5, div_showindis == "Full" ? "MOM" : "M")
+    array.set(indicators_name, 6, div_showindis == "Full" ? "OBV" : "O")
+    array.set(indicators_name, 7, div_showindis == "Full" ? "VWMACD" : "V")
+    array.set(indicators_name, 8, div_showindis == "Full" ? "CMF" : "C")
+    array.set(indicators_name, 9, div_showindis == "Full" ? "MFI" : "M")
+    array.set(indicators_name,10, div_showindis == "Full" ? "Extrn" : "X")
+    array.set(div_colors, 0, pos_reg_div_col)
+    array.set(div_colors, 1, neg_reg_div_col)
+    array.set(div_colors, 2, pos_hid_div_col)
+    array.set(div_colors, 3, neg_hid_div_col)
+
+// compute oscillators
+div_rsi = ta.rsi(close, 14)
+[macdLine, macdSignal, macdHist] = ta.macd(close, 12, 26, 9)
+momVal = ta.mom(close, 10)
+cciVal = ta.cci(close, 10)
+obvVal = ta.obv
+stochVal = ta.sma(ta.stoch(close, high, low, 14), 3)
+vwmaFast = ta.vwma(close, 12)
+vwmaSlow = ta.vwma(close, 26)
+vwmacdVal = vwmaFast - vwmaSlow
+Cmfm = ((close-low) - (high-close)) / (high - low)
+Cmfv = Cmfm * volume
+cmfVal = ta.sma(Cmfv, 21) / ta.sma(volume,21)
+mfiVal = ta.mfi(hlc3, volume, 14)
+
+// pivot detection
+float ph = enable_div ? ta.pivothigh((div_source_mode == "Close" ? close : high), div_prd, div_prd) : na
+float pl = enable_div ? ta.pivotlow( (div_source_mode == "Close" ? close : low ), div_prd, div_prd)  : na
+plotshape(enable_div and not na(ph) and div_showpivot, text = "H",  style = shape.labeldown, color = color.new(color.white, 100), textcolor = color.red, location = location.abovebar, offset = -div_prd)
+plotshape(enable_div and not na(pl) and div_showpivot, text = "L",  style = shape.labelup,   color = color.new(color.white, 100), textcolor = color.lime, location = location.belowbar, offset = -div_prd)
+
+// arrays for pivot storage
+var int maxarraysize = 20
+var ph_positions = array.new<int>(maxarraysize, 0)
+var pl_positions = array.new<int>(maxarraysize, 0)
+var ph_vals = array.new<float>(maxarraysize, 0.)
+var pl_vals = array.new<float>(maxarraysize, 0.)
+
+if enable_div and not na(ph)
+    array.unshift(ph_positions, bar_index)
+    array.unshift(ph_vals, ph)
+    if array.size(ph_positions) > maxarraysize
+        array.pop(ph_positions)
+        array.pop(ph_vals)
+
+if enable_div and not na(pl)
+    array.unshift(pl_positions, bar_index)
+    array.unshift(pl_vals, pl)
+    if array.size(pl_positions) > maxarraysize
+        array.pop(pl_positions)
+        array.pop(pl_vals)
+
+// functions to check divergences (namespaced)
+div_positive_regular_positive_hidden_divergence(src, cond)=>
+    divlen = 0
+    prsc = div_source_mode == "Close" ? close : low
+    if div_dontconfirm or src > src[1] or close > close[1]
+        startpoint = div_dontconfirm ? 0 : 1
+        for x = 0 to div_maxpp - 1
+            len = bar_index - array.get(pl_positions, x) + div_prd
+            if array.get(pl_positions, x) == 0 or len > div_maxbars
+                break
+            if len > 5 and 
+               ((cond == 1 and src[startpoint] > src[len] and prsc[startpoint] < nz(array.get(pl_vals, x))) or
+               (cond == 2 and src[startpoint] < src[len] and prsc[startpoint] > nz(array.get(pl_vals, x))))
+                slope1 = (src[startpoint] - src[len]) / (len - startpoint)
+                virtual_line1 = src[startpoint] - slope1
+                slope2 = (close[startpoint] - close[len]) / (len - startpoint)
+                virtual_line2 = close[startpoint] - slope2
+                arrived = true
+                for y = 1 + startpoint to len - 1
+                    if src[y] < virtual_line1 or nz(close[y]) < virtual_line2
+                        arrived := false
+                        break
+                    virtual_line1 := virtual_line1 - slope1
+                    virtual_line2 := virtual_line2 - slope2
+                if arrived
+                    divlen := len
+                    break
+    divlen
+
+div_negative_regular_negative_hidden_divergence(src, cond)=>
+    divlen = 0
+    prsc = div_source_mode == "Close" ? close : high
+    if div_dontconfirm or src < src[1] or close < close[1]
+        startpoint = div_dontconfirm ? 0 : 1
+        for x = 0 to div_maxpp - 1
+            len = bar_index - array.get(ph_positions, x) + div_prd
+            if array.get(ph_positions, x) == 0 or len > div_maxbars
+                break
+            if len > 5 and 
+               ((cond == 1 and src[startpoint] < src[len] and prsc[startpoint] > nz(array.get(ph_vals, x))) or 
+               (cond == 2 and src[startpoint] > src[len] and prsc[startpoint] < nz(array.get(ph_vals, x))))
+                slope1 = (src[startpoint] - src[len]) / (len - startpoint)
+                virtual_line1 = src[startpoint] - slope1
+                slope2 = (close[startpoint] - nz(close[len])) / (len - startpoint)
+                virtual_line2 = close[startpoint] - slope2
+                arrived = true
+                for y = 1 + startpoint to len - 1
+                    if src[y] > virtual_line1 or nz(close[y]) > virtual_line2
+                        arrived := false
+                        break
+                    virtual_line1 := virtual_line1 - slope1
+                    virtual_line2 := virtual_line2 - slope2
+                if arrived
+                    divlen := len
+                    break
+    divlen
+
+calculate_divs(cond, indicator)=>
+    divs = array.new<int>(4, 0)
+    array.set(divs, 0, (enable_div and cond and (div_searchdiv == "Regular" or div_searchdiv == "Regular/Hidden")) ? div_positive_regular_positive_hidden_divergence(indicator, 1) : 0)
+    array.set(divs, 1, (enable_div and cond and (div_searchdiv == "Regular" or div_searchdiv == "Regular/Hidden")) ? div_negative_regular_negative_hidden_divergence(indicator, 1) : 0)
+    array.set(divs, 2, (enable_div and cond and (div_searchdiv == "Hidden"  or div_searchdiv == "Regular/Hidden"))  ? div_positive_regular_positive_hidden_divergence(indicator, 2) : 0)
+    array.set(divs, 3, (enable_div and cond and (div_searchdiv == "Hidden"  or div_searchdiv == "Regular/Hidden"))  ? div_negative_regular_negative_hidden_divergence(indicator, 2) : 0)
+    divs
+
+var all_divergences = array.new<int>(44)
+array_set_divs(div_pointer, index)=>
+    for x = 0 to 3
+        array.set(all_divergences, index * 4 + x, array.get(div_pointer, x))
+
+// set divergences array
+array_set_divs(calculate_divs(div_calcmacd,    macdLine),      0)
+array_set_divs(calculate_divs(div_calcmacda,   macdHist),      1)
+array_set_divs(calculate_divs(div_calcrsi,     div_rsi),       2)
+array_set_divs(calculate_divs(div_calcstoc,    stochVal),      3)
+array_set_divs(calculate_divs(div_calccci,     cciVal),        4)
+array_set_divs(calculate_divs(div_calcmom,     momVal),        5)
+array_set_divs(calculate_divs(div_calcobv,     obvVal),        6)
+array_set_divs(calculate_divs(div_calcvwmacd,  vwmacdVal),     7)
+array_set_divs(calculate_divs(div_calccmf,     cmfVal),        8)
+array_set_divs(calculate_divs(div_calcmfi,     mfiVal),        9)
+array_set_divs(calculate_divs(div_calcext,     div_externalindi), 10)
+
+// minimum number filter
+total_div = 0
+for x = 0 to array.size(all_divergences) - 1
+    total_div += math.round(math.sign(array.get(all_divergences, x)))
+if enable_div and total_div < div_showlimit
+    array.fill(all_divergences, 0)
+
+// storage for drawings
+var pos_div_lines  = array.new<line>(0)
+var neg_div_lines  = array.new<line>(0)
+var pos_div_labels = array.new<label>(0)
+var neg_div_labels = array.new<label>(0) 
+
+// deletion helpers
+delete_old_pos_div_lines()=>
+    if array.size(pos_div_lines) > 0    
+        for j = 0 to array.size(pos_div_lines) - 1 
+            line.delete(array.get(pos_div_lines, j))
+        array.clear(pos_div_lines)
+
+delete_old_neg_div_lines()=>
+    if array.size(neg_div_lines) > 0    
+        for j = 0 to array.size(neg_div_lines) - 1 
+            line.delete(array.get(neg_div_lines, j))
+        array.clear(neg_div_lines)
+
+delete_old_pos_div_labels()=>
+    if array.size(pos_div_labels) > 0 
+        for j = 0 to array.size(pos_div_labels) - 1 
+            label.delete(array.get(pos_div_labels, j))
+        array.clear(pos_div_labels)
+
+delete_old_neg_div_labels()=>
+    if array.size(neg_div_labels) > 0    
+        for j = 0 to array.size(neg_div_labels) - 1 
+            label.delete(array.get(neg_div_labels, j))
+        array.clear(neg_div_labels)
+
+delete_last_pos_div_lines_label(n)=>
+    if n > 0 and array.size(pos_div_lines) >= n    
+        asz = array.size(pos_div_lines)
+        for j = 1 to n
+            line.delete(array.get(pos_div_lines, asz - j))
+            array.pop(pos_div_lines)
+        if array.size(pos_div_labels) > 0  
+            label.delete(array.get(pos_div_labels, array.size(pos_div_labels) - 1))
+            array.pop(pos_div_labels)
+
+delete_last_neg_div_lines_label(n)=>
+    if n > 0 and array.size(neg_div_lines) >= n    
+        asz = array.size(neg_div_lines)
+        for j = 1 to n
+            line.delete(array.get(neg_div_lines, asz - j))
+            array.pop(neg_div_lines)
+        if array.size(neg_div_labels) > 0  
+            label.delete(array.get(neg_div_labels, array.size(neg_div_labels) - 1))
+            array.pop(neg_div_labels)
+
+// alert flags
+pos_reg_div_detected = false
+neg_reg_div_detected = false
+pos_hid_div_detected = false
+neg_hid_div_detected = false
+
+// state for incremental deletion
+var int last_pos_div_lines = 0
+var int last_neg_div_lines = 0
+var bool remove_last_pos_divs = false 
+var bool remove_last_neg_divs = false
+if enable_div and not na(pl)
+    remove_last_pos_divs := false
+    last_pos_div_lines := 0
+if enable_div and not na(ph)
+    remove_last_neg_divs := false
+    last_neg_div_lines := 0
+
+// draw divergences
+if enable_div
+    divergence_text_top = ""
+    divergence_text_bottom = ""
+    distances = array.new<int>(0)
+    dnumdiv_top = 0
+    dnumdiv_bottom = 0
+    top_label_col = color.white
+    bottom_label_col = color.white
+    old_pos_divs_can_be_removed = true
+    old_neg_divs_can_be_removed = true
+    startpoint = div_dontconfirm ? 0 : 1
+
+    for x = 0 to 10
+        div_type = -1
+        for y = 0 to 3
+            if array.get(all_divergences, x * 4 + y) > 0
+                div_type := y
+                if (y % 2) == 1 
+                    dnumdiv_top += 1
+                    top_label_col := array.get(div_colors, y)
+                if (y % 2) == 0
+                    dnumdiv_bottom += 1
+                    bottom_label_col := array.get(div_colors, y)
+                if not array.includes(distances, array.get(all_divergences, x * 4 + y))
+                    array.push(distances, array.get(all_divergences, x * 4 + y))
+                    new_line = div_showlines ? line.new(
+                              x1 = bar_index - array.get(all_divergences, x * 4 + y), 
+                              y1 = (div_source_mode == "Close" ? close[array.get(all_divergences, x * 4 + y)] : 
+                                               (y % 2) == 0 ? low[array.get(all_divergences, x * 4 + y)] : 
+                                                              high[array.get(all_divergences, x * 4 + y)]),
+                              x2 = bar_index - startpoint,
+                              y2 = (div_source_mode == "Close" ? close[startpoint] : 
+                                               (y % 2) == 0 ? low[startpoint] : 
+                                                              high[startpoint]),
+                              color = array.get(div_colors, y),
+                              style = y < 2 ? reg_div_l_style : hid_div_l_style,
+                              width = y < 2 ? reg_div_l_width : hid_div_l_width
+                              ) : na
+                    if (y % 2) == 0
+                        if old_pos_divs_can_be_removed
+                            old_pos_divs_can_be_removed := false
+                            if not div_showlast and remove_last_pos_divs
+                                delete_last_pos_div_lines_label(last_pos_div_lines)
+                                last_pos_div_lines := 0
+                            if div_showlast
+                                delete_old_pos_div_lines()
+                        array.push(pos_div_lines, new_line)
+                        last_pos_div_lines += 1
+                        remove_last_pos_divs := true
+                    if (y % 2) == 1
+                        if old_neg_divs_can_be_removed
+                            old_neg_divs_can_be_removed := false
+                            if not div_showlast and remove_last_neg_divs
+                                delete_last_neg_div_lines_label(last_neg_div_lines)
+                                last_neg_div_lines := 0
+                            if div_showlast
+                                delete_old_neg_div_lines()
+                        array.push(neg_div_lines, new_line)
+                        last_neg_div_lines += 1
+                        remove_last_neg_divs := true
+                if y == 0
+                    pos_reg_div_detected := true
+                if y == 1
+                    neg_reg_div_detected := true
+                if y == 2
+                    pos_hid_div_detected := true
+                if y == 3
+                    neg_hid_div_detected := true
+        if div_type >= 0
+            divergence_text_top    := divergence_text_top    + ((div_type % 2) == 1 ? (div_showindis != "Don't Show" ? array.get(indicators_name, x) + "\n" : "") : "")
+            divergence_text_bottom := divergence_text_bottom + ((div_type % 2) == 0 ? (div_showindis != "Don't Show" ? array.get(indicators_name, x) + "\n" : "") : "")
+
+    // labels
+    if div_showindis != "Don't Show" or div_shownum
+        if div_shownum and dnumdiv_top > 0
+            divergence_text_top := divergence_text_top + str.tostring(dnumdiv_top)
+        if div_shownum and dnumdiv_bottom > 0
+            divergence_text_bottom := divergence_text_bottom + str.tostring(dnumdiv_bottom)
+        if divergence_text_top != ""
+            if div_showlast
+                delete_old_neg_div_labels()
+            array.push(neg_div_labels, 
+                          label.new( x = bar_index, 
+                                     y = math.max(high, high[1]), 
+                                     text = divergence_text_top,
+                                     color = top_label_col,
+                                     textcolor = neg_div_text_col,
+                                     style = label.style_label_down
+                                     ))
+        if divergence_text_bottom != ""
+            if div_showlast
+                delete_old_pos_div_labels()
+            array.push(pos_div_labels, 
+                          label.new( x = bar_index, 
+                                     y = math.min(low, low[1]), 
+                                     text = divergence_text_bottom,
+                                     color = bottom_label_col, 
+                                     textcolor = pos_div_text_col,
+                                     style = label.style_label_up
+                                     ))
+
+// ALERTS (only fire when divergence module enabled)
+alertcondition(enable_div and pos_reg_div_detected, title='Positive Regular Divergence Detected', message='Positive Regular Divergence Detected')
+alertcondition(enable_div and neg_reg_div_detected, title='Negative Regular Divergence Detected', message='Negative Regular Divergence Detected')
+alertcondition(enable_div and pos_hid_div_detected, title='Positive Hidden Divergence Detected', message='Positive Hidden Divergence Detected')
+alertcondition(enable_div and neg_hid_div_detected, title='Negative Hidden Divergence Detected', message='Negative Hidden Divergence Detected')
+alertcondition(enable_div and (pos_reg_div_detected or pos_hid_div_detected), title='Positive Divergence Detected', message='Positive Divergence Detected')
+alertcondition(enable_div and (neg_reg_div_detected or neg_hid_div_detected), title='Negative Divergence Detected', message='Negative Divergence Detected')

@@ -1,0 +1,437 @@
+{
+  "name": "Competitor Posts Monitor v2",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "bc8c3e4b-cb43-483c-9a37-13b8c7db24b8",
+      "name": "When clicking \"Test workflow\"",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "access_token",
+              "value": ""
+            },
+            {
+              "name": "instagram_business_account_id",
+              "value": ""
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "name": "Set API Credentials",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        460,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://graph.facebook.com/v18.0/me/accounts",
+        "authentication": "none",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "access_token",
+              "value": "={{ $json.access_token }}"
+            },
+            {
+              "name": "fields",
+              "value": "instagram_business_account{id,username}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b2c3d4e5-f6g7-8901-bcde-f23456789012",
+      "name": "Get Instagram Business Accounts",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        680,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "specifyGid"
+        },
+        "options": {}
+      },
+      "id": "e7f8g9h0-i1j2-k3l4-m5n6-o7p8q9r0s1t2",
+      "name": "Read Competitors List",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [
+        900,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.instagram_username }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "f8g9h0i1-j2k3-l4m5-n6o7-p8q9r0s1t2u3",
+      "name": "Filter Valid Usernames",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://graph.facebook.com/v18.0/ig_hashtag_search",
+        "authentication": "none",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "access_token",
+              "value": "={{ $('Set API Credentials').item.json.access_token }}"
+            },
+            {
+              "name": "q",
+              "value": "={{ $json.instagram_username }}"
+            },
+            {
+              "name": "user_id",
+              "value": "={{ $('Set API Credentials').item.json.instagram_business_account_id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "g9h0i1j2-k3l4-m5n6-o7p8-q9r0s1t2u3v4",
+      "name": "Search User by Username",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1340,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://www.instagram.com/{{ $json.instagram_username }}/",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "h0i1j2k3-l4m5-n6o7-p8q9-r0s1t2u3v4w5",
+      "name": "Get Instagram Profile",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1560,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Извлекаем данные из HTML страницы Instagram\nconst html = items[0].binary.data.data.toString();\n\n// Ищем JSON данные в HTML\nconst jsonMatch = html.match(/window\\._sharedData = ({.*?});/);\nif (!jsonMatch) {\n  throw new Error('Не удалось найти данные профиля');\n}\n\nconst sharedData = JSON.parse(jsonMatch[1]);\nconst user = sharedData.entry_data?.ProfilePage?.[0]?.graphql?.user;\n\nif (!user) {\n  throw new Error('Профиль не найден или приватный');\n}\n\n// Получаем последние посты\nconst posts = user.edge_owner_to_timeline_media?.edges || [];\nconst recentPosts = posts.slice(0, 5).map(edge => ({\n  id: edge.node.id,\n  shortcode: edge.node.shortcode,\n  display_url: edge.node.display_url,\n  caption: edge.node.edge_media_to_caption?.edges?.[0]?.node?.text || '',\n  taken_at: edge.node.taken_at_timestamp,\n  like_count: edge.node.edge_liked_by?.count || 0,\n  comment_count: edge.node.edge_media_to_comment?.count || 0,\n  is_video: edge.node.is_video,\n  username: user.username,\n  permalink: `https://www.instagram.com/p/${edge.node.shortcode}/`\n}));\n\nreturn recentPosts.map(post => ({\n  ...post,\n  original_username: items[0].json.instagram_username\n}));"
+      },
+      "id": "i1j2k3l4-m5n6-o7p8-q9r0-s1t2u3v4w5x6",
+      "name": "Extract Posts Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1780,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Получаем текущую дату\nconst now = new Date();\n// Получаем дату публикации поста (timestamp в секундах)\nconst postDate = new Date($input.item.json.taken_at * 1000);\n\n// Проверяем, был ли пост опубликован в последние 24 часа\nconst timeDiff = now.getTime() - postDate.getTime();\nconst hoursDiff = timeDiff / (1000 * 3600);\n\n// Возвращаем результат\nreturn {\n  ...items[0].json,\n  isNew: hoursDiff <= 24,\n  hoursAgo: Math.round(hoursDiff * 100) / 100,\n  formattedDate: postDate.toLocaleString('ru-RU'),\n  timestamp: postDate.toISOString()\n};"
+      },
+      "id": "j2k3l4m5-n6o7-p8q9-r0s1-t2u3v4w5x6y7",
+      "name": "Check if Post is New",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2000,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.isNew }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "k3l4m5n6-o7p8-q9r0-s1t2-u3v4w5x6y7z8",
+      "name": "Filter New Posts Only",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2,
+      "position": [
+        2220,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Формируем красивое сообщение для email\nconst post = items[0].json;\n\nconst emailSubject = `🚨 Новая публикация @${post.username}`;\n\nconst emailBody = `\n<h2>🚨 Обнаружена новая публикация конкурента!</h2>\n\n<div style=\"border: 1px solid #ddd; padding: 20px; margin: 20px 0; border-radius: 8px; background-color: #f9f9f9;\">\n  <h3>📊 Информация о публикации:</h3>\n  \n  <p><strong>👤 Аккаунт:</strong> @${post.username}</p>\n  <p><strong>📅 Дата публикации:</strong> ${post.formattedDate}</p>\n  <p><strong>⏰ Опубликовано:</strong> ${post.hoursAgo} часов назад</p>\n  <p><strong>📝 Тип контента:</strong> ${post.is_video ? 'Видео' : 'Изображение'}</p>\n  \n  <p><strong>❤️ Лайки:</strong> ${post.like_count}</p>\n  <p><strong>💬 Комментарии:</strong> ${post.comment_count}</p>\n  \n  <hr style=\"margin: 20px 0;\">\n  \n  <h4>📄 Текст публикации:</h4>\n  <div style=\"background-color: white; padding: 15px; border-radius: 5px; border-left: 4px solid #007bff;\">\n    ${post.caption || 'Текст отсутствует'}\n  </div>\n  \n  <hr style=\"margin: 20px 0;\">\n  \n  <p><strong>🔗 Ссылка на публикацию:</strong> <a href=\"${post.permalink}\" target=\"_blank\">Открыть в Instagram</a></p>\n  \n  <div style=\"margin-top: 20px;\">\n    <h4>🖼️ Превью:</h4>\n    <img src=\"${post.display_url}\" alt=\"Post image\" style=\"max-width: 400px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);\">\n  </div>\n</div>\n\n<p style=\"color: #666; font-size: 12px; margin-top: 30px;\">📧 Это автоматическое уведомление от системы мониторинга конкурентов</p>\n`;\n\nreturn {\n  subject: emailSubject,\n  body: emailBody,\n  competitor: post.username,\n  postUrl: post.permalink,\n  timestamp: post.timestamp\n};"
+      },
+      "id": "l4m5n6o7-p8q9-r0s1-t2u3-v4w5x6y7z8a9",
+      "name": "Format Email Content",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2440,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "noreply@yourcompany.com",
+        "toEmail": "your-email@example.com",
+        "subject": "={{ $json.subject }}",
+        "emailType": "html",
+        "message": "={{ $json.body }}",
+        "options": {}
+      },
+      "id": "m5n6o7p8-q9r0-s1t2-u3v4-w5x6y7z8a9b0",
+      "name": "Send Email Notification",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [
+        2660,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "sheet",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=1",
+          "mode": "specifyGid"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "date": "={{ new Date().toISOString().split('T')[0] }}",
+            "competitor": "={{ $json.competitor }}",
+            "post_url": "={{ $json.postUrl }}",
+            "timestamp": "={{ $json.timestamp }}",
+            "status": "notified"
+          }
+        },
+        "options": {}
+      },
+      "id": "n6o7p8q9-r0s1-t2u3-v4w5-x6y7z8a9b0c1",
+      "name": "Log to Google Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [
+        2880,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "When clicking \"Test workflow\"": {
+      "main": [
+        [
+          {
+            "node": "Set API Credentials",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set API Credentials": {
+      "main": [
+        [
+          {
+            "node": "Get Instagram Business Accounts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Instagram Business Accounts": {
+      "main": [
+        [
+          {
+            "node": "Read Competitors List",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Competitors List": {
+      "main": [
+        [
+          {
+            "node": "Filter Valid Usernames",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Valid Usernames": {
+      "main": [
+        [
+          {
+            "node": "Get Instagram Profile",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Instagram Profile": {
+      "main": [
+        [
+          {
+            "node": "Extract Posts Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Posts Data": {
+      "main": [
+        [
+          {
+            "node": "Check if Post is New",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check if Post is New": {
+      "main": [
+        [
+          {
+            "node": "Filter New Posts Only",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter New Posts Only": {
+      "main": [
+        [
+          {
+            "node": "Format Email Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Email Content": {
+      "main": [
+        [
+          {
+            "node": "Send Email Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Email Notification": {
+      "main": [
+        [
+          {
+            "node": "Log to Google Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2024-01-15T10:00:00.000Z",
+  "versionId": "2"
+}

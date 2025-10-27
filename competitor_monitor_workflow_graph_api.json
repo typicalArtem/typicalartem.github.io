@@ -1,0 +1,579 @@
+{
+  "name": "Competitor Social Media Monitor (Graph API)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "cronExpression": "0 10 * * *"
+            }
+          ]
+        }
+      },
+      "id": "84a8d0d3-d8f0-4be8-b2d8-6c3a4b8a7e9f",
+      "name": "Daily Schedule",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [
+        200,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": "YOUR_GOOGLE_SHEET_ID",
+        "sheetName": "Competitors",
+        "range": "A:E",
+        "options": {}
+      },
+      "id": "9e5f2b4c-3a7d-4e8f-9b1c-2d6e8a5b9c4f",
+      "name": "Read Competitors List",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [
+        400,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "7c2e8f4b-5d9a-4f1e-8b3c-1a5d7e9b2f4c",
+      "name": "Split Into Batches",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        600,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "a1b2c3d4-e5f6-7890-1234-567890abcdef",
+              "leftValue": "={{ $json.platform }}",
+              "rightValue": "instagram",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "5f8e2a7b-9d1c-4e6f-8a2b-3c7e9f1d5a8b",
+      "name": "Check Platform Type",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        800,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://graph.facebook.com/v18.0/{{ $json.page_id }}?fields=id,name,username&access_token={{ $('Get Access Token').item.json.access_token }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 10000
+        }
+      },
+      "id": "2b7e4f1a-8c5d-4e9f-7a3b-1d6e8c2f5a9b",
+      "name": "Get Instagram Business Account",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1000,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://graph.facebook.com/v18.0/{{ $json.page_id }}/media?fields=id,caption,media_type,media_url,permalink,timestamp&since={{ Math.floor((new Date(Date.now() - 24*60*60*1000)).getTime()/1000) }}&access_token={{ $('Get Access Token').item.json.access_token }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 10000
+        }
+      },
+      "id": "3e9f1c5a-7b2d-4f8e-9c1a-5e8f2b6d9c3a",
+      "name": "Get Instagram Posts",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1200,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://graph.facebook.com/v18.0/{{ $json.page_id }}?fields=id,name,username&access_token={{ $('Get Access Token').item.json.access_token }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 10000
+        }
+      },
+      "id": "6f2a8e1b-9c4d-4e7f-8a2b-3d6e9c1f5a8b",
+      "name": "Get Facebook Page Info",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1000,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://graph.facebook.com/v18.0/{{ $json.page_id }}/posts?fields=id,message,story,created_time,permalink_url,full_picture,attachments{media,description}&since={{ Math.floor((new Date(Date.now() - 24*60*60*1000)).getTime()/1000) }}&access_token={{ $('Get Access Token').item.json.access_token }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 10000
+        }
+      },
+      "id": "4d7e2f9a-8c1b-4e5f-9a3d-6e2f8c5b9a1d",
+      "name": "Get Facebook Posts",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1200,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get or refresh Facebook access token\nconst appId = 'YOUR_FACEBOOK_APP_ID';\nconst appSecret = 'YOUR_FACEBOOK_APP_SECRET';\nconst existingToken = 'YOUR_EXISTING_ACCESS_TOKEN'; // Long-lived user access token\n\n// For production, you should store tokens securely and implement proper refresh logic\n// This is a simplified example\n\nreturn [{\n  json: {\n    access_token: existingToken,\n    app_id: appId,\n    app_secret: appSecret\n  }\n}];"
+      },
+      "id": "8a1e4f7b-9c2d-4e5f-8a3b-1d6e9c2f5a8b",
+      "name": "Get Access Token",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        200,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process Instagram posts from Graph API response\nconst response = $input.first().json;\nconst competitor = $input.first().json;\nconst lastCheckDate = competitor.last_check || new Date(Date.now() - 24*60*60*1000).toISOString();\n\nlet newPosts = [];\n\nif (response.body && response.body.data) {\n  const posts = response.body.data;\n  \n  for (const post of posts) {\n    const postDate = new Date(post.timestamp);\n    const checkDate = new Date(lastCheckDate);\n    \n    if (postDate > checkDate) {\n      newPosts.push({\n        username: competitor.username,\n        platform: 'instagram',\n        post_id: post.id,\n        content: post.caption || 'No caption',\n        url: post.permalink,\n        date: post.timestamp,\n        image: post.media_url,\n        media_type: post.media_type,\n        company_name: competitor.company_name\n      });\n    }\n  }\n}\n\nreturn newPosts.map(post => ({ json: post }));"
+      },
+      "id": "9b2e5f8a-1c4d-4e7f-9a2b-3d6e8f1c5a9b",
+      "name": "Process Instagram Posts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1400,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process Facebook posts from Graph API response\nconst response = $input.first().json;\nconst competitor = $input.first().json;\nconst lastCheckDate = competitor.last_check || new Date(Date.now() - 24*60*60*1000).toISOString();\n\nlet newPosts = [];\n\nif (response.body && response.body.data) {\n  const posts = response.body.data;\n  \n  for (const post of posts) {\n    const postDate = new Date(post.created_time);\n    const checkDate = new Date(lastCheckDate);\n    \n    if (postDate > checkDate) {\n      const content = post.message || post.story || 'No content available';\n      const image = post.full_picture || (post.attachments && post.attachments.data[0] && post.attachments.data[0].media && post.attachments.data[0].media.image && post.attachments.data[0].media.image.src);\n      \n      newPosts.push({\n        username: competitor.username,\n        platform: 'facebook',\n        post_id: post.id,\n        content: content,\n        url: post.permalink_url,\n        date: post.created_time,\n        image: image,\n        company_name: competitor.company_name\n      });\n    }\n  }\n}\n\nreturn newPosts.map(post => ({ json: post }));"
+      },
+      "id": "1c3e6f9a-2d5e-4f8a-1b4c-5e8f2c6a9d1c",
+      "name": "Process Facebook Posts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1400,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineAll",
+        "options": {}
+      },
+      "id": "8e1f4c2a-9b5d-4e7f-8c2a-3f6e9b1d5c8a",
+      "name": "Merge Posts",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2.1,
+      "position": [
+        1600,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "b2c3d4e5-f6g7-8901-2345-678901bcdefg",
+              "leftValue": "={{ $json.content }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "isNotEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "9f2e5a8b-1c4d-4e7f-9a3b-2d5e8f1c4a9b",
+      "name": "Filter New Posts",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1800,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Format email content for new posts\nconst posts = $input.all();\n\nif (posts.length === 0) {\n  return [{ json: { skip: true } }];\n}\n\nlet emailContent = `\n<h2>🔔 Новые публикации конкурентов</h2>\n<p>Обнаружены новые публикации за последние 24 часа через Graph API:</p>\n`;\n\nlet platformCounts = {};\n\nfor (const item of posts) {\n  const post = item.json;\n  \n  if (!platformCounts[post.platform]) {\n    platformCounts[post.platform] = 0;\n  }\n  platformCounts[post.platform]++;\n  \n  const platformIcon = post.platform === 'instagram' ? '📸' : '📘';\n  const mediaInfo = post.media_type ? ` (${post.media_type})` : '';\n  \n  emailContent += `\n  <div style=\"border: 1px solid #ddd; padding: 15px; margin: 10px 0; border-radius: 8px; background: #fafafa;\">\n    <h3>${platformIcon} ${post.platform.toUpperCase()}: ${post.company_name} (@${post.username})</h3>\n    <p><strong>🕐 Дата:</strong> ${new Date(post.date).toLocaleString('ru-RU')}</p>\n    <p><strong>🆔 Post ID:</strong> ${post.post_id}</p>\n    ${mediaInfo ? `<p><strong>📁 Тип медиа:</strong> ${post.media_type}</p>` : ''}\n    <p><strong>📝 Содержание:</strong></p>\n    <blockquote style=\"background: #fff; padding: 12px; border-left: 4px solid #007cba; margin: 10px 0; border-radius: 4px;\">\n      ${post.content.substring(0, 800)}${post.content.length > 800 ? '...' : ''}\n    </blockquote>\n    <p><a href=\"${post.url}\" target=\"_blank\" style=\"color: #007cba; text-decoration: none; font-weight: bold;\">🔗 Посмотреть публикацию</a></p>\n    ${post.image ? `<p><img src=\"${post.image}\" style=\"max-width: 100%; height: auto; max-height: 400px; border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);\" alt=\"Post media\"></p>` : ''}\n  </div>\n  `;\n}\n\n// Add summary\nconst summary = Object.entries(platformCounts)\n  .map(([platform, count]) => `${platform}: ${count}`)\n  .join(', ');\n\nemailContent += `\n<hr style=\"margin: 20px 0; border: none; border-top: 1px solid #ddd;\">\n<div style=\"background: #f0f8ff; padding: 15px; border-radius: 8px; margin: 15px 0;\">\n  <h4>📊 Сводка:</h4>\n  <p><strong>Всего новых публикаций:</strong> ${posts.length}</p>\n  <p><strong>По платформам:</strong> ${summary}</p>\n</div>\n<p><small style=\"color: #666;\">🤖 Автоматическое уведомление от системы мониторинга конкурентов (Graph API)</small></p>\n`;\n\nreturn [{\n  json: {\n    subject: `🔔 Обнаружено ${posts.length} новых публикаций конкурентов (${summary})`,\n    html: emailContent,\n    text: posts.map(item => `${item.json.platform.toUpperCase()}: ${item.json.company_name} (@${item.json.username}) - ${item.json.content.substring(0, 200)}...`).join('\\n\\n')\n  }\n}];"
+      },
+      "id": "1a8e3f5b-9c2d-4e6f-8a1b-4d7e9c2f6a8b",
+      "name": "Format Email Content",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2000,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "c3d4e5f6-g7h8-9012-3456-789012cdefgh",
+              "leftValue": "={{ $json.skip }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "notEqual"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "2b9f4e7a-1c5d-4e8f-9b2a-5e8f1c4a7b9f",
+      "name": "Check If Send Email",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2200,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "noreply@yourcompany.com",
+        "toEmail": "your-email@yourcompany.com",
+        "subject": "={{ $json.subject }}",
+        "emailType": "html",
+        "message": "={{ $json.html }}",
+        "options": {}
+      },
+      "id": "3c1f5e8a-2d6e-4f9a-1c4b-6e9f2c5a8b1f",
+      "name": "Send Email Notification",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [
+        2400,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "sheet",
+        "operation": "update",
+        "documentId": "YOUR_GOOGLE_SHEET_ID",
+        "sheetName": "Competitors",
+        "columnToMatchOn": "username",
+        "valueToMatchOn": "={{ $json.username }}",
+        "fieldsUi": {
+          "values": [
+            {
+              "column": "last_check",
+              "value": "={{ new Date().toISOString() }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "4d2f6e9a-3e7f-5f1a-2c5b-7f1e3c6a9d2f",
+      "name": "Update Check Timestamp",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [
+        2600,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Handle API errors and rate limiting\nconst input = $input.first().json;\n\nif (input.statusCode >= 400) {\n  console.log(`API Error: ${input.statusCode} - ${input.body?.error?.message || 'Unknown error'}`);\n  \n  if (input.statusCode === 429) {\n    // Rate limit exceeded\n    return [{ \n      json: { \n        error: 'Rate limit exceeded', \n        retry_after: input.headers?.['retry-after'] || 3600,\n        skip: true\n      } \n    }];\n  }\n  \n  if (input.statusCode === 190 || input.statusCode === 401) {\n    // Token expired or invalid\n    return [{ \n      json: { \n        error: 'Access token expired or invalid', \n        skip: true\n      } \n    }];\n  }\n  \n  return [{ \n    json: { \n      error: `HTTP ${input.statusCode}: ${input.body?.error?.message || 'Unknown error'}`,\n      skip: true\n    } \n  }];\n}\n\nreturn [$input.first()];"
+      },
+      "id": "5e8f1c4a-7b9d-4e2f-9a6b-2d5e8f1c4a7b",
+      "name": "Handle API Errors",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1000,
+        600
+      ]
+    }
+  ],
+  "connections": {
+    "Daily Schedule": {
+      "main": [
+        [
+          {
+            "node": "Get Access Token",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Read Competitors List",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Competitors List": {
+      "main": [
+        [
+          {
+            "node": "Split Into Batches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Into Batches": {
+      "main": [
+        [
+          {
+            "node": "Check Platform Type",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Platform Type": {
+      "main": [
+        [
+          {
+            "node": "Get Instagram Business Account",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get Facebook Page Info",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Instagram Business Account": {
+      "main": [
+        [
+          {
+            "node": "Handle API Errors",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Instagram Posts": {
+      "main": [
+        [
+          {
+            "node": "Process Instagram Posts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Facebook Page Info": {
+      "main": [
+        [
+          {
+            "node": "Handle API Errors",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Facebook Posts": {
+      "main": [
+        [
+          {
+            "node": "Process Facebook Posts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Handle API Errors": {
+      "main": [
+        [
+          {
+            "node": "Get Instagram Posts",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Facebook Posts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Instagram Posts": {
+      "main": [
+        [
+          {
+            "node": "Merge Posts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Facebook Posts": {
+      "main": [
+        [
+          {
+            "node": "Merge Posts",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge Posts": {
+      "main": [
+        [
+          {
+            "node": "Filter New Posts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter New Posts": {
+      "main": [
+        [
+          {
+            "node": "Format Email Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Email Content": {
+      "main": [
+        [
+          {
+            "node": "Check If Send Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check If Send Email": {
+      "main": [
+        [
+          {
+            "node": "Send Email Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Email Notification": {
+      "main": [
+        [
+          {
+            "node": "Update Check Timestamp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "createdAt": "2024-12-31T10:00:00.000Z",
+      "updatedAt": "2024-12-31T10:00:00.000Z",
+      "id": "social-monitoring-graph-api",
+      "name": "Social Media Monitoring (Graph API)"
+    }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2024-12-31T10:00:00.000Z",
+  "versionId": "1"
+}
